@@ -25,6 +25,6 @@ Currently this script generates three outputs:
 ## TODO
 1. Generate SVG paths from elevation data
 2. Generate a merged outline + elevation SVG
-   a. right now
+   1. Right now it seems the elevation data is wider than the outline SVG, but the shapefile was used to generate both :thinking:
 3. Add a nice border to the final SVG
 4. Add some text to the final SVG.  State name, elevation stats (min, max, avg), area, population, etc.
