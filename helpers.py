@@ -1,13 +1,16 @@
 from rasterio.merge import merge
 from rasterio.plot import show
 import glob
-from osgeo import gdal
+from osgeo import gdal, ogr
 import matplotlib.pyplot as plt
 import os
 import elevation
 import rasterio as rio
 from rasterio.mask import mask
 import geopandas as gpd
+import svgwrite
+from shapely.geometry import mapping
+import xml.etree.ElementTree as ET
 
 def merge_tiffs(base_output_path, merged_output_path):
     """
@@ -111,8 +114,6 @@ def save_boundary_svg(state_boundary, state_name):
 
 def save_shapefile(state_boundary, state_name):
     state_folder_name = state_name.lower()
-    
-    os.makedirs(state_folder_name, exist_ok=True)
 
     # Define the output path for the shapefile
     output_filename = f'./{state_folder_name}/{state_name.lower()}_boundary.shp'
@@ -207,8 +208,127 @@ def validate_state_name(state_name):
     return state_name in us_states
 
 def clean_up_intermediate_files(state_name):
-    tiff_files = find_tiff_files(f'{state_name.replace(" ", "_").lower()}_section_elevation')
+    tiff_files = find_tiff_files(f'{state_name}_section_elevation')
 
     for file_path in tiff_files:
         if os.path.exists(file_path):
             os.remove(file_path)
+
+def generate_contours(input_tif, output_shp, interval=10.0, attribute_name='elev'):
+    """
+    Generate contours from a GeoTIFF and save them to a shapefile.
+
+    Parameters:
+    - input_tif: Path to the input GeoTIFF file.
+    - output_shp: Path for the output shapefile.
+    - interval: Elevation interval between contour lines.
+    - attribute_name: Name of the attribute to store the elevation value.
+    """
+    # Open the input GeoTIFF file
+    src_ds = gdal.Open(input_tif)
+    if src_ds is None:
+        print(f"Unable to open {input_tif}")
+        return
+
+    band = src_ds.GetRasterBand(1)
+    driver = ogr.GetDriverByName('ESRI Shapefile')
+    if driver is None:
+        print("ESRI Shapefile driver not available.")
+        return
+
+    if os.path.exists(output_shp):
+        driver.DeleteDataSource(output_shp)
+
+    out_ds = driver.CreateDataSource(output_shp)
+    srs = src_ds.GetProjectionRef()
+    layer = out_ds.CreateLayer(output_shp, gdal.osr.SpatialReference(wkt=srs), ogr.wkbLineString)
+    layer.CreateField(ogr.FieldDefn(attribute_name, ogr.OFTReal))
+
+    # Use the index of the created field for the elevation attribute
+    field_idx = layer.FindFieldIndex(attribute_name, 1)
+
+    elevations = [0, 100, 200, 300, 400, 500, 527]
+
+    gdal.ContourGenerate(band, interval, 0, elevations, 0, 0, layer, field_idx, 0)
+
+    del src_ds, out_ds
+
+def contours_to_svg(shapefile_path, svg_path, state_name, simplification_tolerance=0.001):
+    # Load the shapefile
+    gdf = gpd.read_file(shapefile_path)
+
+    gdf = gdf[gdf.is_valid & ~gdf.is_empty]
+    
+    # Simplify geometries
+    gdf['geometry'] = gdf['geometry'].simplify(simplification_tolerance, preserve_topology=True)
+
+    rows, cols = calculate_bbox_rows_cols(gdf.total_bounds, 1)
+
+    # Assuming svg_width and svg_height are determined externally or set to a fixed value
+    svg_width, svg_height = calculate_svg_dimensions_based_on_grid(rows+1, cols+1) # Placeholder values, adjust or calculate as needed
+
+    # Normalize the geometry to fit the SVG canvas
+    bounds = gdf.total_bounds  # (minx, miny, maxx, maxy)
+    x_range = bounds[2] - bounds[0]
+    y_range = bounds[3] - bounds[1]
+
+    # Create an SVG drawing
+    dwg = svgwrite.Drawing(svg_path, size=(svg_width, svg_height))
+
+    # Add contours to the SVG
+    for _, row in gdf.iterrows():
+        if row['geometry'].geom_type == 'LineString':
+            points = [(svg_width * (x - bounds[0]) / x_range, 
+                       svg_height * (1 - (y - bounds[1]) / y_range))  # Flip y-axis to match SVG coordinate system
+                      for x, y in mapping(row['geometry'])['coordinates']]
+            dwg.add(dwg.polyline(points, stroke=svgwrite.rgb(10, 10, 16, '%'), fill='none'))
+        elif row['geometry'].geom_type == 'MultiLineString':
+            for line in row['geometry']:
+                points = [(svg_width * (x - bounds[0]) / x_range, 
+                           svg_height * (1 - (y - bounds[1]) / y_range))  # Flip y-axis to match SVG coordinate system
+                          for x, y in mapping(line)['coordinates']]
+                dwg.add(dwg.polyline(points, stroke=svgwrite.rgb(10, 10, 16, '%'), fill='none'))
+
+    # Calculate the position for the text element
+    # Assuming the lowest point is at the bottom of the SVG, adjust the y-position by the specified number of pixels
+    pixels_below_lowest_point = 20
+    text_y_position = svg_height - pixels_below_lowest_point
+    text = state_name.title()
+    font_size = '20px'
+    font_family = 'Roboto Mono'
+
+    # Add text element below the lowest contour
+    dwg.add(dwg.text(text, insert=(svg_width / 2, text_y_position), font_size=font_size, font_family=font_family, text_anchor="middle"))
+
+
+    # Save the SVG
+    dwg.save()
+
+def calculate_svg_dimensions_based_on_grid(rows, cols, base_dimension=1000):
+    """
+    Calculate SVG dimensions to match the aspect ratio defined by the number of rows and columns,
+    ensuring the SVG has a non-stretched version of the grid.
+
+    Parameters:
+    - rows: Number of rows in the grid.
+    - cols: Number of columns in the grid.
+    - base_dimension: The base size for the shorter side of the SVG to maintain aspect ratio.
+
+    Returns:
+    - A tuple containing the width and height of the SVG.
+    """
+    # Calculate the aspect ratio based on the grid
+    aspect_ratio = cols / rows
+    
+    # Determine which dimension to match to the base_dimension
+    if aspect_ratio >= 1:
+        # Width is greater than or equal to height
+        svg_width = base_dimension * aspect_ratio
+        svg_height = base_dimension
+    else:
+        # Height is greater than width
+        svg_width = base_dimension
+        svg_height = base_dimension / aspect_ratio
+
+    return int(svg_width), int(svg_height)
+

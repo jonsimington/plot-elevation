@@ -9,6 +9,8 @@ These are required pip packages:
 - `matplotlib`
 - `elevation`
 - `geopandas`
+- `svgwrite`
+- `shapely`
 
 ## Usage
 1. Install dependencies via `pip`
