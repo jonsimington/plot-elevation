@@ -17,16 +17,15 @@ These are required pip packages:
 2. `python state_boundaries.py <state_name>` where `state_name` is a US state.
 
 ## Outputs
-Currently this script generates three outputs:
+Currently this script generates:
 1. A `.shp` shapefile, and its corresponding `.cpg`, `.dbf`, `.prj`, `.shx` files
 2. An SVG of the shapefile's outline - useful as a single-line layer for the state's outline, separate from the contour data
    ![Shapefile outline SVG example](img/shapefile_outline_svg_example.png)
 3. A merged GeoTIFF clipped to the state's shapefile.  You can import this into QGIS to visualize the state's elevation changes.
-   ![Shapefile outline SVG example](img/clipped_elevation_example.png)
+   ![GeoTIFF example](img/clipped_elevation_example.png)
+4. An SVG containing the state's elevation data sampled at 10 levels across the elevation range
+   ![Elevation Contour example](img/elevation_contour_example.png)
 
 ## TODO
-1. Generate SVG paths from elevation data
-2. Generate a merged outline + elevation SVG
-   1. Right now it seems the elevation data is wider than the outline SVG, but the shapefile was used to generate both :thinking:
-3. Add a nice border to the final SVG
-4. Add some text to the final SVG.  State name, elevation stats (min, max, avg), area, population, etc.
+1. Add a nice border to the final SVG
+2. Add some text to the final SVG.  State name, elevation stats (min, max, avg), area, population, etc.

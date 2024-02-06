@@ -247,13 +247,15 @@ def generate_contours(input_tif, output_shp, interval=10.0, attribute_name='elev
     # Use the index of the created field for the elevation attribute
     field_idx = layer.FindFieldIndex(attribute_name, 1)
 
-    elevations = get_elevation_intervals(input_tif, 100)
+    elevations = get_elevation_intervals(input_tif)
+
+    print(elevations)
 
     gdal.ContourGenerate(band, interval, 0, elevations, 0, 0, layer, field_idx, 0)
 
     del src_ds, out_ds
 
-def get_elevation_intervals(input_tif, interval_delta):
+def get_elevation_intervals(input_tif):
     elevations = []
     
     with rio.open(input_tif) as src:
@@ -261,6 +263,9 @@ def get_elevation_intervals(input_tif, interval_delta):
         
         min_elevation = 0
         max_elevation = elevation_data.max()
+
+        # 10 contour evaluations spread across the elevation range
+        interval_delta = (max_elevation - min_elevation) / 10 
 
         current = min_elevation
         while current <= max_elevation:
