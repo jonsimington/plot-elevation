@@ -247,11 +247,31 @@ def generate_contours(input_tif, output_shp, interval=10.0, attribute_name='elev
     # Use the index of the created field for the elevation attribute
     field_idx = layer.FindFieldIndex(attribute_name, 1)
 
-    elevations = [0, 100, 200, 300, 400, 500, 527]
+    elevations = get_elevation_intervals(input_tif, 100)
 
     gdal.ContourGenerate(band, interval, 0, elevations, 0, 0, layer, field_idx, 0)
 
     del src_ds, out_ds
+
+def get_elevation_intervals(input_tif, interval_delta):
+    elevations = []
+    
+    with rio.open(input_tif) as src:
+        elevation_data = src.read(1)  # Reading the first band
+        
+        min_elevation = 0
+        max_elevation = elevation_data.max()
+
+        current = min_elevation
+        while current <= max_elevation:
+            elevations.append(current)
+            current += interval_delta
+            if current > max_elevation and max_elevation not in elevations:
+                elevations.append(max_elevation)
+                break
+        
+    return elevations
+
 
 def contours_to_svg(shapefile_path, svg_path, state_name, simplification_tolerance=0.001):
     # Load the shapefile
